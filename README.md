@@ -21,6 +21,18 @@ The analysis includes:
 - Evaluated model performance using the Likelihood Ratio Test and Hosmer-Lemeshow Test.
 - Predicted Hall of Fame induction probabilities for players on the 2026 Hall of Fame ballot.
 
+## Example Visualization
+
+The figure below compares selected career performance statistics for inducted and non-inducted players.
+
+![Hall of Fame Comparison](images/hof_comparison_boxplots.png)
+
+## Prediction Results
+
+The final model was applied to the 2026 Hall of Fame ballot. Using a classification threshold of 0.50, none of the players were predicted to be inducted into the Hall of Fame.
+
+![Prediction Results](images/prediction_results.png)
+
 ## Files
 
 - **hall_of_fame_analysis.Rmd** – R Markdown source code for the complete analysis.
