@@ -1,0 +1,542 @@
+---
+title: "Baseball Hall of Fame Prediction"
+author: "Fatane Telikani"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Introduction
+
+Baseball Hall of Fame induction is a binary classification problem because the outcome is either "Yes" or "No." Historical player statistics can be used to identify factors associated with Hall of Fame induction and to estimate the probability that a player will be inducted.
+
+This project builds a logistic regression model using career statistics from Major League Baseball players. The final model is then used to predict the Hall of Fame status of players in the 2026 dataset.
+
+# Objective
+
+The goal of this project is to develop a logistic regression model that predicts whether a baseball player will be inducted into the Hall of Fame based on career performance statistics.
+
+The analysis includes data exploration, feature selection, model development, model evaluation, and prediction for the 2026 players.
+
+# Dataset
+
+This project uses two datasets.
+
+The training dataset contains **644** Major League Baseball players who received at least one Hall of Fame vote. It includes career performance statistics and a response variable indicating whether each player was inducted into the Hall of Fame.
+
+The prediction dataset contains **12** players from the 2026 Hall of Fame ballot. It includes the same predictor variables but does not include the Hall of Fame outcome. The trained model uses this dataset to predict each player's probability of Hall of Fame induction.
+
+# Exploratory Data Analysis
+
+## Dataset Overview
+
+This section explores the dataset before building the logistic regression model. The first step is to examine the variables, data types, and overall distribution of the data.
+
+```{r}
+baseballHOF <- read.csv("~/Desktop/courses/Projects/project1/baseballHOF.csv")
+dim(baseballHOF)
+str(baseballHOF)
+summary(baseballHOF)
+```
+
+## Standard Deviation of Numeric Variables
+
+The standard deviation of each numeric variable is calculated to measure how much the values vary across players.
+
+```{r}
+sapply(baseballHOF, function(x)
+  if(is.numeric(x)) sd(x, na.rm = TRUE) else NA)
+```
+
+## Distribution of Selected Variables
+
+Histograms are used to examine the distribution of several important player statistics.
+
+```{r fig.width=10, fig.height=6}
+library(ggplot2)
+library(gridExtra)
+
+quantitative_vars <- c("WAR", "HR", "OPS", "JAWS", "RBI")
+
+histograms <- lapply(quantitative_vars, function(var) {
+  ggplot(baseballHOF, aes(x = .data[[var]])) +
+    geom_histogram(bins = 30, fill = "grey70", color = "black") +
+    labs(
+      title = var,
+      x = var,
+      y = "Count"
+    ) +
+    theme_minimal()
+})
+
+grid.arrange(grobs = histograms, ncol = 3)
+
+```
+
+Most variables are right-skewed, indicating that a small number of players have exceptionally high career statistics.
+
+## Detecting Outliers
+
+Boxplots are used to identify potential outliers in the selected variables.
+
+```{r fig.width=10, fig.height=6}
+library(ggplot2)
+library(gridExtra)
+
+quantitative_vars <- c("WAR", "HR", "OPS", "JAWS", "RBI")
+
+boxplots <- lapply(quantitative_vars, function(var) {
+  ggplot(baseballHOF, aes(y = .data[[var]])) +
+    geom_boxplot(fill = "grey70", color = "black") +
+    labs(
+      title = var,
+      y = var,
+      x = NULL
+    ) +
+    theme_minimal()
+})
+
+grid.arrange(grobs = boxplots, ncol = 3)
+```
+
+Several variables contain extreme values. These observations represent exceptional player performance and are expected in professional sports data.
+
+## Categorical Variables
+
+The categorical variables are summarized using frequency tables and bar charts. These summaries show the distribution of player positions and Hall of Fame induction status.
+
+```{r}
+# Frequency table for Position
+table(baseballHOF$position)
+
+# Frequency table for Hall of Fame status
+table(baseballHOF$HoF)
+```
+```{r fig.width=7, fig.height=5}
+# Bar Plot: Player Position
+library(ggplot2)
+
+ggplot(baseballHOF, aes(x = position)) +
+  geom_bar(fill = "steelblue") +
+  labs(
+    title = "Distribution of Player Positions",
+    x = "Position",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+```{r fig.width=6, fig.height=5}
+# Bar Plot: Hall of Fame Status
+ggplot(baseballHOF, aes(x = HoF)) +
+  geom_bar(fill = "darkgreen") +
+  labs(
+    title = "Hall of Fame Induction",
+    x = "Hall of Fame Status",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+The frequency tables and bar charts show the distribution of player positions and Hall of Fame induction status. The dataset includes players from several positions, with infielders and outfielders representing the largest groups. The response variable includes both inducted and non-inducted players, providing data for building and evaluating the logistic regression model.
+
+## Compare Players by Hall of Fame Status
+
+This section compares the average values of the numeric variables for players who were inducted into the Hall of Fame and those who were not. These summaries help identify variables that may be useful for predicting Hall of Fame induction.
+
+```{r}
+library(dplyr)
+
+comparison_summary <- baseballHOF %>%
+  group_by(HoF) %>%
+  summarise(
+    across(
+      where(is.numeric),
+      ~ round(mean(.x, na.rm = TRUE), 2)
+    )
+  )
+
+comparison_summary
+```
+
+The summary table shows that Hall of Fame players generally have higher average values for many career performance statistics, including WAR, JAWS, WAR7, home runs, RBIs, and on-base percentage. These differences suggest that these variables may help distinguish inducted players from non-inducted players.
+
+## Boxplots by Hall of Fame Status
+
+Boxplots compare the distribution of selected player statistics between inducted and non-inducted players. These plots provide a visual comparison of the two groups.
+
+```{r fig.width=10, fig.height=7}
+library(ggplot2)
+library(gridExtra)
+
+selected_vars <- c("WAR", "HR", "OPS", "JAWS", "RBI")
+
+boxplots <- lapply(selected_vars, function(var) {
+  ggplot(baseballHOF,
+         aes(x = HoF, y = .data[[var]], fill = HoF)) +
+    geom_boxplot() +
+    labs(
+      title = var,
+      x = "Hall of Fame Status",
+      y = var
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+})
+
+grid.arrange(grobs = boxplots, ncol = 2)
+```
+
+The boxplots show that inducted players generally have higher values for several career performance statistics than non-inducted players. Although the two groups overlap for some variables, many statistics show clear differences between the groups, supporting their use in the logistic regression model.
+
+
+# Data Preparation
+
+Before building the model, the dataset is checked for missing values and duplicate rows. 
+
+```{r missing-values}
+# Check missing values
+colSums(is.na(baseballHOF))
+```
+
+```{r duplicate-rows}
+# Check duplicate rows
+sum(duplicated(baseballHOF))
+```
+
+The results show that there are no missing values in any of the variables and no duplicate observations in the dataset.
+
+
+# Model Development
+
+Hall of Fame status has two possible outcomes: "Yes" and "No." Therefore, logistic regression is used to estimate each player’s probability of being inducted into the Hall of Fame.
+
+## Initial Logistic Regression Model
+
+An initial logistic regression model was fitted using all available predictor variables. The model estimates the probability that a player will be inducted into the Hall of Fame based on career performance statistics.
+
+```{r initial-model}
+# Fit the model
+library(dplyr)
+
+baseballHOF$HOF <- factor(baseballHOF$HoF,
+                          levels = c("No", "Yes"))
+model_full <- glm(
+  HOF ~ Yrs + WAR + WAR7 + JAWS + JAWSratio +
+    G + AB + R + H + HR + RBI + SB + BB +
+    BA + OBP + SLG + OPS + OPSadj + position,
+  data = baseballHOF,
+  family = binomial()
+)
+```
+
+```{r predictions}
+
+# Predict Hall of Fame Status
+predictions <- baseballHOF %>%
+  mutate(
+    Probability = predict(model_full, type = "response"),
+    Predicted_HOF = ifelse(Probability >= 0.5, "Yes", "No")
+  )
+
+# Confusion matrix
+conf_matrix <- table(
+  Actual = predictions$HOF,
+  Predicted = predictions$Predicted_HOF
+)
+conf_matrix
+
+# Classification accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+misclassification <- 1 - accuracy
+
+cat("Correct Classification:", round(accuracy * 100, 2), "%\n")
+cat("Incorrect Classification:", round(misclassification * 100, 2), "%\n")
+```
+
+The model correctly classified 446 players who were not inducted and 127 players who were inducted. It incorrectly classified 26 non-inducted players as inducted and 45 inducted players as non-inducted.
+
+Overall, the model achieved an accuracy of **88.98%**, with an incorrect classification rate of **11.02%**. These results show that the full model fits the observed data well. 
+
+
+## Model Evaluation
+
+The initial logistic regression model was evaluated using the likelihood ratio test and the Hosmer-Lemeshow goodness-of-fit test.
+
+### Likelihood Ratio Test
+
+The likelihood ratio test compares the full model with a model that contains no predictors. A small p-value indicates that the predictors improve the model.
+
+```{r}
+# Likelihood ratio test statistic
+LRT <- model_full$null.deviance - model_full$deviance
+df <- model_full$df.null - model_full$df.residual
+p_value <- pchisq(LRT, df = df, lower.tail = FALSE)
+
+LRT
+df
+p_value
+```
+
+
+The likelihood ratio test produced a p-value below 0.05. This shows that the full model provides a significantly better fit than a model with no predictors.
+
+### Hosmer-Lemeshow Test
+
+The Hosmer-Lemeshow test examines whether the predicted probabilities agree with the observed outcomes.
+
+```{r}
+library(ResourceSelection)
+observed_HOF <- ifelse(baseballHOF$HoF == "Yes", 1, 0)
+hoslem_result <- hoslem.test(
+  observed_HOF,
+  predictions$Probability,
+  g = 10
+)
+hoslem_result
+```
+
+The Hosmer-Lemeshow test produced a p-value of 0.6243 which is greater than 0.05. This indicates no significant difference between the observed and predicted outcomes, suggesting that the model fits the data adequately.
+
+Overall, the model evaluation results indicate that the initial logistic regression model is appropriate for predicting Hall of Fame induction. 
+
+# Feature Selection
+
+The initial model includes all available predictor variables. Feature selection is used to identify a smaller set of variables that provides a good model fit while reducing unnecessary complexity.
+
+Backward, forward, and stepwise selection are compared using AIC. A lower AIC indicates a better balance between model fit and model complexity.
+
+## Backward Selection
+
+Backward selection begins with the full logistic regression model containing all predictor variables. Variables are then removed one at a time based on AIC. The process continues until removing additional variables no longer improves the model.
+
+```{r backward-selection}
+backward_model <- step(
+  model_full,
+  direction = "backward",
+  trace = FALSE
+)
+
+summary(backward_model)
+formula(backward_model)
+AIC(backward_model)
+```
+
+
+## Forward Selection
+
+Forward selection starts with a simple model and adds predictor variables one at a time. At each step, the variable that produces the greatest improvement in AIC is added. The process stops when no additional variable improves the model.
+
+```{r}
+null_model <- glm(
+  HOF ~ 1,
+  data = baseballHOF,
+  family = binomial()
+)
+
+forward_model <- step(
+  null_model,
+  scope = list(
+    lower = formula(null_model),
+    upper = formula(model_full)
+  ),
+  direction = "forward",
+  trace = FALSE
+)
+
+summary(forward_model)
+formula(forward_model)
+AIC(forward_model)
+```
+
+
+## Stepwise Selection
+
+Stepwise selection combines forward and backward selection. Variables can be added or removed at each step based on the AIC criterion until the final model is obtained.
+
+```{r}
+stepwise_model <- step(
+  model_full,
+  direction = "both",
+  trace = FALSE
+)
+
+summary(stepwise_model)
+formula(stepwise_model)
+AIC(stepwise_model)
+```
+
+
+## Final Selected Model
+
+The full, backward, forward, and stepwise models were compared using the AIC. The model with the lowest AIC was selected as the final model because it provided the best balance between model fit and model complexity.
+
+```{r}
+aic_comparison <- data.frame(
+  Model = c(
+    "Full Model",
+    "Backward Selection",
+    "Forward Selection",
+    "Stepwise Selection"
+  ),
+  AIC = c(
+    AIC(model_full),
+    AIC(backward_model),
+    AIC(forward_model),
+    AIC(stepwise_model)
+  )
+)
+
+aic_comparison
+```
+```{r}
+aic_comparison[
+  which.min(aic_comparison$AIC),
+]
+```
+
+The backward and stepwise selection methods produced the same final model and the lowest AIC value of 376.38. The forward selection model had an AIC of 380.27, while the full model had the highest AIC of 394.03.
+
+Because the backward and stepwise methods selected the same predictors and produced the same AIC, they represent the same final model. The backward-selected model was used for the remaining analysis.
+
+
+# Final Model Evaluation 
+
+## Classification Performance 
+
+The final selected model was used to calculate each player's predicted probability of Hall of Fame induction. Players with a predicted probability of at least 0.50 were classified as "Yes," while the remaining players were classified as "No." A confusion matrix and classification accuracy were then used to evaluate the model's performance.
+
+```{r}
+final_model <- backward_model
+selected_predictions <- baseballHOF %>%
+  mutate(
+    Probability = predict(
+      final_model,
+      newdata = baseballHOF,
+      type = "response"
+    ),
+    Predicted_HOF = ifelse(
+      Probability >= 0.5,
+      "Yes",
+      "No"
+    )
+  )
+
+# Confusion matrix
+
+selected_conf_matrix <- table(
+  Actual = selected_predictions$HOF,
+  Predicted = selected_predictions$Predicted_HOF
+)
+selected_conf_matrix
+
+# Classification accuracy
+selected_accuracy <- sum(diag(selected_conf_matrix)) /
+  sum(selected_conf_matrix)
+
+selected_misclassification <- 1 - selected_accuracy
+
+cat(
+  "Correct Classification:",
+  round(selected_accuracy * 100, 2),
+  "%\n"
+)
+
+cat(
+  "Incorrect Classification:",
+  round(selected_misclassification * 100, 2),
+  "%\n"
+)
+
+```
+
+The final selected model correctly classified 449 players who were not inducted into the Hall of Fame and 126 players who were inducted. It incorrectly classified 23 non-inducted players as inducted and 46 inducted players as non-inducted.
+
+Overall, the selected model achieved a classification accuracy of **89.29%**, with an incorrect classification rate of **10.71%**. This accuracy is slightly higher than that of the full model (88.98%), indicating that the selected model provides slightly better predictive performance while using fewer predictor variables. These results suggest that feature selection improved the model by reducing complexity without sacrificing accuracy.
+
+
+## Likelihood ratio and Hosmer-Lemeshow tests
+
+The final selected model was evaluated using the likelihood ratio test and the Hosmer-Lemeshow goodness-of-fit test.
+
+```{r}
+#Likelihood Ratio Test
+LRT_selected <- final_model$null.deviance - final_model$deviance
+df_selected <- final_model$df.null - final_model$df.residual
+p_value_selected <- pchisq(
+  LRT_selected,
+  df = df_selected,
+  lower.tail = FALSE
+)
+LRT_selected
+df_selected
+p_value_selected
+```
+
+
+```{r}
+# Hosmer-Lemeshow Test
+library(ResourceSelection)
+
+observed_HOF <- ifelse(
+  baseballHOF$HOF == "Yes",
+  1,
+  0
+)
+selected_probabilities <- predict(
+  final_model,
+  type = "response"
+)
+hoslem_selected <- hoslem.test(
+  observed_HOF,
+  selected_probabilities,
+  g = 10
+)
+hoslem_selected
+```
+
+The likelihood ratio test was statistically significant (p < 0.05), indicating that the selected model provides a significantly better fit than the null model.
+
+The Hosmer-Lemeshow test was not statistically significant (p-value=0.6806 > 0.05), indicating no evidence of poor fit. Therefore, the selected model fits the observed data adequately.
+
+Overall, the selected model demonstrates good model fit.
+
+# Prediction
+
+The final selected logistic regression model was used to predict the probability of Hall of Fame induction for the players on the 2026 Hall of Fame ballot. Players with a predicted probability of at least 0.50 were classified as likely to be inducted into the Hall of Fame.
+
+```{r}
+baseballHOF2026 <- read.csv("~/Desktop/courses/Projects/project1/baseballHOF2026.csv")
+predictions <- predict(
+  final_model,
+  newdata = baseballHOF2026,
+  type = "response"
+)
+
+predicted_class <- ifelse(predictions >= 0.5, "Yes", "No")
+
+baseballHOF2026$Probability <- predictions
+baseballHOF2026$Predicted_HOF <- predicted_class
+
+baseballHOF2026 %>%
+  mutate(Probability = round(Probability, 3)) %>%
+  select(Name, Probability, Predicted_HOF)
+```
+
+The predicted probabilities for all 12 players were below the 0.50 classification threshold. Therefore, the model predicted that none of the players on the 2026 ballot would be inducted into the Hall of Fame.
+
+# Conclusion
+
+This project developed a logistic regression model to predict Major League Baseball Hall of Fame induction using players' career performance statistics. The analysis included exploratory data analysis, data preparation, model development, feature selection, model evaluation, and prediction.
+
+Feature selection was performed using backward, forward, and stepwise selection. Both the backward and stepwise methods produced the same final model with the lowest AIC, indicating the best balance between model fit and model complexity. The selected model achieved a classification accuracy of **89.29%**, which was slightly higher than the accuracy of the full model (**88.98%**). In addition, the likelihood ratio test showed that the model was statistically significant, and the Hosmer-Lemeshow test indicated a good fit to the observed data.
+
+The final model was then applied to the 2026 Hall of Fame dataset to estimate each player's probability of induction. Based on a classification threshold of 0.50, none of the players on the 2026 ballot were predicted to be inducted into the Hall of Fame.
+
+Overall, the results demonstrate that logistic regression is an effective method for modeling Hall of Fame induction and that feature selection can improve model simplicity while maintaining strong predictive performance.
